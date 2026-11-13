@@ -1,57 +1,72 @@
-from celery import shared_task
-from .models import Review
-from transformers import pipeline
-from transformers import AutoModelForSequenceClassification
+import hashlib
 
 import redis
-import json
+from celery import shared_task
+from django.conf import settings
 
-redis_client = redis.Redis(host='localhost', port=6379, db=0)
+from .models import Review
 
+
+MODEL_NAME = "tabularisai/multilingual-sentiment-analysis"
+CACHE_TTL_SECONDS = 60*60*24
+
+redis_client = redis.Redis.from_url(settings.SENTIMENT_CACHE_URL)
 
 _model = None
+
 
 def get_model():
     global _model
     if _model is None:
+        from transformers import pipeline
         print("Model loading...")
-        _model = pipeline("text-classification", model="tabularisai/multilingual-sentiment-analysis")
+        _model = pipeline("text-classification", model=MODEL_NAME)
     return _model
 
+
+def _cache_key(text):
+    digest = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
+    return f"sentiment:text:{digest}"
 
 @shared_task(bind=True)
 def analyze_sentiment(self, review_id):
     try:
         review = Review.objects.get(id=review_id)
-        cache_key = f"sentiment:review:{review_id}"
+        
+        except Review.DoesNotExist:
+        # Review was deleted; retrying will not help
+        return {"status": "not_found", "review_id": review_id}
 
-        cached_sentiment = redis_client.get(cache_key)
-        if cached_sentiment:
-            sentiment_label = cached_sentiment.decode('utf-8')
-            review.sentiment = sentiment_label
-            review.save()
-            return {
-                'status': 'cached',
-                'review_id': review_id,
-                'review_sentiment': sentiment_label
-            }
+    cache_key = _cache_key(review.text)
 
-        sentiment_pipeline = get_model()
-        result = sentiment_pipeline(review.text)[0]
-        sentiment_label = result['label']
+    try:
+        cached = redis_client.get(cache_key)
+    except redis.RedisError:
+        # Cache is optional - fall back to running the model
+        cached = None
 
-        review.sentiment = sentiment_label
-        review.save()
+    if cached:
+        sentiment_label = cached.decode("utf-8")
+        status = "cached"
+    else:
+        try:
+            result = get_model()(review.text, truncation=True)[0]
+        except Exception as exc:
+            raise self.retry(exc=exc, countdown=60)
+        sentiment_label = result["label"]
+        status = "success"
+        try:
+            redis_client.set(cache_key, sentiment_label, ex=CACHE_TTL_SECONDS)
+        except redis.RedisError:
+            pass
 
-        redis_client.set(cache_key, sentiment_label, ex=60 * 60 * 24)
+    review.sentiment = sentiment_label
+    review.save(update_fields=["sentiment"])
 
-        return {
-            'status': 'success',
-            'review_id': review_id,
-            'review_sentiment': sentiment_label
-        }
-
-    except Exception as e:
-        self.retry(exc=e, countdown=60)
+    return {
+        "status": status,
+        "review_id": review_id,
+        "review_sentiment": sentiment_label,
+    }
 
 

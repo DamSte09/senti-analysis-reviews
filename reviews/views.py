@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect
 from .forms import ReviewForm
 from .models import Review
 from .tasks import analyze_sentiment
+from django.db import transaction
 from django.http import JsonResponse
 
 def review_list(request):
@@ -10,6 +11,7 @@ def review_list(request):
         if form.is_valid():
             review = form.save()
             analyze_sentiment.delay(review.id)
+            transaction.on_commit(lambda: analyze_sentiment.delay(review.id))
             return redirect('review_list')
     else:
         form = ReviewForm()
