@@ -1,52 +1,36 @@
-# syntax=docker/dockerfile:1
-
-# Comments are provided throughout this file to help you get started.
-# If you need more help, visit the Dockerfile reference guide at
-# https://docs.docker.com/go/dockerfile-reference/
-
-# Want to help us make this template better? Share your feedback here: https://forms.gle/ybq9Krt8jtBL3iCk7
-
-# syntax=docker/dockerfile:1
-
-ARG PYTHON_VERSION=3.11.8  # Zmiana na wspieraną wersję
+ARG PYTHON_VERSION=3.11.8
 FROM python:${PYTHON_VERSION}-slim AS base
 
-# Zmienne środowiskowe dla Pythona
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV XDG_CACHE_HOME=/home/appuser/.cache
-ENV TRANSFORMERS_CACHE=/home/appuser/.cache/huggingface
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    XDG_CACHE_HOME=/home/appuser/.cache \
+    HF_HOME=/home/appuser/.cache/huggingface
 
 WORKDIR /app
 
-# Utworzenie użytkownika aplikacyjnego
-RUN useradd -m -u 1001 -d /home/appuser appuser && \
-    mkdir -p ${TRANSFORMERS_CACHE} && \
+ARG UID=10001
+RUN useradd --create-home --uid ${UID} appuser && \
+    mkdir -p ${HF_HOME} && \
     chown -R appuser:appuser /home/appuser
 
-# Instalacja zależności systemowych
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
     gcc \
     python3-dev && \
     rm -rf /var/lib/apt/lists/*
 
-# Instalacja zależności Pythona z optymalizacją cache
+
 RUN --mount=type=cache,target=/root/.cache/pip \
     --mount=type=bind,source=requirements.txt,target=requirements.txt \
-    pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install torch --index-url ${TORCH_INDEX_URL} && \
+    pip install -r requirements.txt
 
-# Zmiana własności katalogu aplikacji
-RUN chown -R appuser:appuser /app
-
-# Przełączenie na użytkownika aplikacyjnego
-USER appuser
-
-# Kopiowanie kodu źródłowego
 COPY --chown=appuser:appuser . .
+
+USER appuser
 
 EXPOSE 8000
 
-# Poprawiona składnia CMD
-CMD ["gunicorn", "review_project.wsgi", "--bind=0.0.0.0:8000"]
+CMD ["gunicorn", "review_project.wsgi:application", "--bind=0.0.0.0:8000", "--workers=2"]
