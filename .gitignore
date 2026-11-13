@@ -1,0 +1,8 @@
+.vscode
+__pycache__
+reviews/__pycache__
+reviews/migrations/__pycache__
+reviews/migrations/*.pyc
+reviews_project/__pycache__
+*.pyc
+*sqlite3
