@@ -8,3 +8,5 @@ reviews/migrations/*.pyc
 reviews_project/__pycache__
 *.pyc
 *.sqlite3
+
+.env
