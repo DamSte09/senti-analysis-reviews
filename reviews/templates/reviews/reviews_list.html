@@ -1,12 +1,13 @@
 <!DOCTYPE html>
-<html>
+<html lang="pl">
 <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Recenzje</title>
     <style>
     body {
         font-family: 'Arial', sans-serif;
         line-height: 1.6;
-        margin: 0;
         padding: 20px;
         background-color: #f5f5f5;
         max-width: 800px;
@@ -45,19 +46,16 @@
         font-weight: bold;
     }
 
-    input[type="text"], 
     textarea {
         width: 100%;
+        height: 120px;
         padding: 10px;
         border: 1px solid #bdc3c7;
         border-radius: 4px;
         margin-bottom: 10px;
         box-sizing: border-box;
         font-size: 16px;
-    }
-
-    textarea {
-        height: 120px;
+        font-family: inherit;
         resize: vertical;
     }
 
@@ -76,6 +74,28 @@
         background-color: #2980b9;
     }
 
+    button:disabled {
+        background-color: #95a5a6;
+        cursor: wait;
+    }
+
+    .errorlist,
+    .form-errors {
+        color: #c0392b;
+        margin: 0 0 10px;
+        padding-left: 0;
+        list-style: none;
+    }
+
+    .connection-status {
+        background: #fdf2e9;
+        border: 1px solid #e67e22;
+        color: #a04000;
+        padding: 10px 15px;
+        border-radius: 4px;
+        margin-bottom: 20px;
+    }
+
     .review {
         background: white;
         padding: 20px;
@@ -89,36 +109,46 @@
         transform: translateY(-2px);
     }
 
+    .review-text {
+        overflow-wrap: anywhere;
+    }
+
     .sentiment {
-    font-weight: bold;
-    padding: 3px 8px;
-    border-radius: 4px;
-}
+        font-weight: bold;
+        padding: 3px 8px;
+        border-radius: 4px;
+    }
 
-.sentiment-very-positive {
-    background-color: #2ecc71;
-    color: white;
-}
+    .sentiment-very-positive {
+        background-color: #2ecc71;
+        color: white;
+    }
 
-.sentiment-very-negative {
-    background-color: #e74c3c;
-    color: white;
-}
+    .sentiment-positive {
+        background-color: #27ae60;
+        color: white;
+    }
 
-.sentiment-positive {
-    background-color: #27ae60;
-    color: white;
-}
+    .sentiment-neutral {
+        background-color: #f1c40f;
+        color: black;
+    }
 
-.sentiment-negative {
-    background-color: #c0392b;
-    color: white;
-}
+    .sentiment-negative {
+        background-color: #c0392b;
+        color: white;
+    }
 
-.sentiment-neutral {
-    background-color: #f1c40f;
-    color: black;
-}
+    .sentiment-very-negative {
+        background-color: #e74c3c;
+        color: white;
+    }
+
+    .sentiment-pending {
+        background-color: #ecf0f1;
+        color: #7f8c8d;
+        font-weight: normal;
+    }
 
     small {
         display: block;
@@ -127,74 +157,187 @@
         font-size: 0.9em;
     }
 
+    .pagination {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 30px 0;
+    }
+
+    .pagination a {
+        color: #3498db;
+        text-decoration: none;
+    }
+
     @media (max-width: 600px) {
         body {
             padding: 15px;
         }
-        
-        form {
-            padding: 15px;
-        }
-        
+
+        form,
         .review {
             padding: 15px;
         }
     }
-</style>
+    </style>
 </head>
 <body>
     <h1>Dodaj recenzję</h1>
-    <form method="post">
+    <form id="review-form" method="post" action="{% url 'review_list' %}">
         {% csrf_token %}
         {{ form.as_p }}
+        {# Errors from AJAX submits are rendered here #}
+        <ul class="form-errors" id="form-errors" aria-live="polite"></ul>
         <button type="submit">Wyślij</button>
     </form>
 
     <h2>Poprzednie recenzje:</h2>
-    {% for review in reviews %}
-    <div style="margin: 20px 0; padding: 10px; border: 1px solid #ccc;">
-        <p>{{ review.text }}</p>
-        <p>
-            Sentyment:
-            <span class="sentiment sentiment-{{ review.sentiment|slugify }}" data-review-id="{{ review.id }}">
-                {% if review.sentiment %}
-                    {{ review.sentiment }}
-                {% else %}
-                    W trakcie...
-                {% endif %}
-            </span>
-        </p>
-        <small>{{ review.pub_date }}</small>
 
+    <div class="connection-status" id="connection-status" role="status" hidden></div>
+
+    <div id="review-list"
+         data-page="{{ page.number }}"
+         data-first-page-url="{% url 'review_list' %}"
+         data-sentiment-url="{% url 'reviews_sentiment' %}">
+        {% for review in page %}
+            {% include "reviews/_review.html" %}
+        {% empty %}
+            <p id="empty-message">Brak recenzji. Dodaj pierwszą!</p>
+        {% endfor %}
     </div>
-    {% endfor %}
+
+    {% if page.has_other_pages %}
+    <nav class="pagination" aria-label="Strony recenzji">
+        <span>{% if page.has_previous %}<a href="?page={{ page.previous_page_number }}">&larr; Nowsze</a>{% endif %}</span>
+        <span>Strona {{ page.number }} z {{ page.paginator.num_pages }}</span>
+        <span>{% if page.has_next %}<a href="?page={{ page.next_page_number }}">Starsze &rarr;</a>{% endif %}</span>
+    </nav>
+    {% endif %}
 
 <script>
-    function updateSentiments() {
-        document.querySelectorAll('.sentiment').forEach(function(span) {
-            const reviewId = span.getAttribute('data-review-id');
-            fetch(`/api/review/${reviewId}/sentiment/`)
-                .then(response => response.json())
-                .then(data => {
-                    if (data.sentiment && span.textContent.trim() !== data.sentiment) {
-                        // Usuń wszystkie klasy sentiment-*
-                        span.classList.forEach(className => {
-                            if (className.startsWith('sentiment-')) {
-                                span.classList.remove(className);
-                            }
-                        });
-                        
-                        // Ustaw nowy tekst i dodaj odpowiednią klasę
-                        span.textContent = data.sentiment;
-                        span.classList.add('sentiment');
-                        span.classList.add(`sentiment-${data.sentiment.toLowerCase().replace(' ', '-')}`);
-                    }
-                });
-        });
+(function () {
+    'use strict';
+
+    const POLL_INTERVAL_MS = 3000;
+    // On network errors the delay doubles up to this value
+    const MAX_POLL_INTERVAL_MS = 30000;
+    const AJAX_HEADERS = { 'X-Requested-With': 'XMLHttpRequest' };
+
+    const list = document.getElementById('review-list');
+    const form = document.getElementById('review-form');
+    const formErrors = document.getElementById('form-errors');
+    const statusBox = document.getElementById('connection-status');
+
+    let pollDelay = POLL_INTERVAL_MS;
+    let pollTimer = null;
+
+    function pendingIds() {
+        return Array.from(list.querySelectorAll('.review[data-pending]'), el => el.dataset.reviewId);
     }
 
-    // Odświeżanie co 5 sekund (zmieniłem na 5 sekund zamiast 50)
-    setInterval(updateSentiments, 5000);
+    function showStatus(message) {
+        statusBox.textContent = message;
+        statusBox.hidden = !message;
+    }
+
+    // Start polling only if there is something to wait for and no poll is scheduled yet
+    function schedulePoll() {
+        if (pollTimer === null && pendingIds().length > 0) {
+            pollTimer = setTimeout(poll, pollDelay);
+        }
+    }
+
+    async function poll() {
+        pollTimer = null;
+        const ids = pendingIds();
+        if (ids.length === 0) {
+            return;
+        }
+
+        try {
+            const url = `${list.dataset.sentimentUrl}?ids=${ids.join(',')}`;
+            const response = await fetch(url, { headers: AJAX_HEADERS });
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            const data = await response.json();
+
+            // Replace finished cards with the server-rendered version
+            for (const [id, html] of Object.entries(data.ready)) {
+                const card = list.querySelector(`.review[data-review-id="${id}"]`);
+                if (card) {
+                    card.outerHTML = html;
+                }
+            }
+            // Reviews missing from both lists were deleted: stop polling them
+            for (const id of ids) {
+                if (!(id in data.ready) && !data.pending.includes(id)) {
+                    const card = list.querySelector(`.review[data-review-id="${id}"]`);
+                    if (card) {
+                        card.removeAttribute('data-pending');
+                    }
+                }
+            }
+
+            pollDelay = POLL_INTERVAL_MS;
+            showStatus('');
+        } catch (error) {
+            console.warn('Sentiment polling failed:', error);
+            pollDelay = Math.min(pollDelay * 2, MAX_POLL_INTERVAL_MS);
+            showStatus('Brak połączenia z serwerem – ponawiam…');
+        }
+
+        schedulePoll();
+    }
+
+    function showFormErrors(messages) {
+        formErrors.replaceChildren(...messages.map(text => {
+            const li = document.createElement('li');
+            li.textContent = text;
+            return li;
+        }));
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('button[type="submit"]');
+        button.disabled = true;
+        showFormErrors([]);
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: new FormData(form),
+                headers: AJAX_HEADERS,
+            });
+
+            if (response.status === 201) {
+                // On older pages the new review would not belong here: go to page 1
+                if (list.dataset.page !== '1') {
+                    window.location.href = list.dataset.firstPageUrl;
+                    return;
+                }
+                const data = await response.json();
+                document.getElementById('empty-message')?.remove();
+                list.insertAdjacentHTML('afterbegin', data.html);
+                form.reset();
+                schedulePoll();
+            } else if (response.status === 400) {
+                const data = await response.json();
+                showFormErrors(Object.values(data.errors).flat());
+            } else {
+                throw new Error(`HTTP ${response.status}`);
+            }
+        } catch (error) {
+            console.warn('Submitting review failed:', error);
+            showFormErrors(['Nie udało się wysłać recenzji. Spróbuj ponownie.']);
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    schedulePoll();
+})();
 </script>
 </body>
 </html>

@@ -2,6 +2,7 @@ import hashlib
 
 import redis
 from celery import shared_task
+from celery.signals import worker_ready
 from django.conf import settings
 
 from .models import Review
@@ -28,12 +29,17 @@ def _cache_key(text):
     digest = hashlib.sha256(text.strip().lower().encode("utf-8")).hexdigest()
     return f"sentiment:text:{digest}"
 
-@shared_task(bind=True)
+@worker_ready.connect
+def load_model(sender, **kwargs):
+    # Load the model when the worker is ready, so that the first task doesn't have to wait for it
+    get_model()
+
+@shared_task(bind=True, max_retries=3, ignore_result=True)
 def analyze_sentiment(self, review_id):
     try:
         review = Review.objects.get(id=review_id)
         
-        except Review.DoesNotExist:
+    except Review.DoesNotExist:
         # Review was deleted; retrying will not help
         return {"status": "not_found", "review_id": review_id}
 

@@ -77,7 +77,7 @@ WSGI_APPLICATION = 'review_project.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
-ATABASES = {
+DATABASES = {
      'default': {
          'ENGINE': 'django.db.backends.sqlite3',
         'NAME': os.environ.get('SQLITE_PATH', BASE_DIR / 'db.sqlite3'),
@@ -115,9 +115,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'pl'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Europe/Warsaw'
 
 USE_I18N = True
 
@@ -135,6 +135,5 @@ STATIC_URL = 'static/'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', 'amqp://guest:guest@localhost:5672//')
-CELERY_RESULT_BACKEND = os.environ.get('CELERY_RESULT_BACKEND', 'redis://localhost:6379/0')
 
 SENTIMENT_CACHE_URL = os.environ.get('SENTIMENT_CACHE_URL', 'redis://localhost:6379/1')

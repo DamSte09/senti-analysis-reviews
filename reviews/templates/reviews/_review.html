@@ -1,0 +1,13 @@
+{# Single review card. Used by the page and by the AJAX endpoints, so markup and CSS classes live in one place. #}
+<article class="review" data-review-id="{{ review.id }}" {% if not review.sentiment %} data-pending{% endif %}>
+    <p class="review-text">{{ review.text|linebreaksbr }}</p>
+    <p>
+        Sentyment:
+        {% if review.sentiment %}
+        <span class="sentiment sentiment-{{ review.sentiment|slugify }}">{{ review.sentiment }}</span>
+        {% else %}
+        <span class="sentiment sentiment-pending">W trakcie...</span>
+        {% endif %}
+    </p>
+    <small>{{ review.pub_date|date:"d.m.Y H:i" }}</small>
+</article>

@@ -21,5 +21,6 @@ from reviews import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', views.review_list, name='review_list'),
-    path('api/review/<int:review_id>/sentiment/', views.get_review_sentiment, name='get_review_sentiment'),
+    # One request for all pending reviews instead of one request per review
+    path('api/reviews/sentiment/', views.reviews_sentiment, name='reviews_sentiment'),
 ]

@@ -7,4 +7,4 @@ reviews/migrations/__pycache__
 reviews/migrations/*.pyc
 reviews_project/__pycache__
 *.pyc
-*sqlite3
+*.sqlite3

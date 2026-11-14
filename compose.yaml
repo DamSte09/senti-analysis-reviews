@@ -1,22 +1,25 @@
+# Development stack: Django (web) + Celery worker + RabbitMQ (broker)
+# + Redis (sentiment cache). Database: SQLite on a shared named volume.
+#
+# Run with: docker compose up --build
+# App:          http://localhost:8000
+# RabbitMQ UI:  http://localhost:15672 (guest / guest)
+
+# Shared settings for every container built from our Dockerfile
 x-app: &app
   build: .
   image: senti-analysis-reviews
   restart: unless-stopped
-  environment: &app-env
+  environment:
     DJANGO_DEBUG: "1"
     DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
     DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
-    POSTGRES_HOST: db
-    POSTGRES_DB: reviews
-    POSTGRES_USER: reviews
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-reviews}
+    # SQLite file lives on the shared named volume, not in the bind-mounted source dir
+    SQLITE_PATH: /data/db.sqlite3
     CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
-    CELERY_RESULT_BACKEND: redis://redis:6379/0
     # Separate Redis DB for the sentiment cache used in reviews/tasks.py
     SENTIMENT_CACHE_URL: redis://redis:6379/1
-  depends_on: &app-deps
-    db:
-      condition: service_healthy
+  depends_on:
     rabbitmq:
       condition: service_healthy
     redis:
@@ -25,27 +28,33 @@ x-app: &app
 services:
   web:
     <<: *app
-    build: .
-    command: sh -c "python manage.py migrate --noinput && python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    # Migrations are generated on the host and committed; the container only applies them
+    command: sh -c "python manage.py migrate --noinput && python manage.py runserver 0.0.0.0:8000"
     volumes:
+      # Live code reload during development
       - .:/app
+      # Shared SQLite database (same volume as in celery-worker)
       - sqlite_data:/data
     ports:
       - "8000:8000"
- 
+
   celery-worker:
     <<: *app
-    build: .
-    command: celery -A review_project worker --loglevel=info --concurency=1
+    # Single process (no fork): the model is loaded once at startup (see worker_ready in tasks.py)
+    # and only one process writes to SQLite
+    command: celery -A review_project worker --loglevel=info --pool=solo
     volumes:
       - .:/app
-      - huggingface_cache:/home/appuser/.cache/huggingface
       - sqlite_data:/data
+      # Must match HF_HOME from the Dockerfile, otherwise the model is re-downloaded on every start
+      - huggingface_cache:/home/appuser/.cache/huggingface
 
   rabbitmq:
     image: rabbitmq:3.13-management
+    restart: unless-stopped
     ports:
-      - "15672:15672" 
+      # Only the management UI is exposed; AMQP stays on the internal network
+      - "15672:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -70,4 +79,3 @@ volumes:
   rabbitmq_data:
   redis_data:
   huggingface_cache:
-
