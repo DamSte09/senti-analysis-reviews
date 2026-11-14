@@ -3,7 +3,9 @@
 #
 # Run with: docker compose up --build
 # App:          http://localhost:8000
-# RabbitMQ UI:  http://localhost:15672 (guest / guest)
+# RabbitMQ UI:  http://localhost:15672 (login from .env)
+#
+# Copy .env.example to .env and fill it in first. Compose reads .env automatically.
 
 # Shared settings for every container built from our Dockerfile
 x-app: &app
@@ -11,12 +13,12 @@ x-app: &app
   image: senti-analysis-reviews
   restart: unless-stopped
   environment:
-    DJANGO_DEBUG: "1"
-    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
-    DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,0.0.0.0
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-1}
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY in .env (see .env.example)}
+    DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,0.0.0.0}
     # SQLite file lives on the shared named volume, not in the bind-mounted source dir
     SQLITE_PATH: /data/db.sqlite3
-    CELERY_BROKER_URL: amqp://guest:guest@rabbitmq:5672//
+    CELERY_BROKER_URL: amqp://${RABBITMQ_USER:-guest}:${RABBITMQ_PASSWORD:-guest}@rabbitmq:5672//
     # Separate Redis DB for the sentiment cache used in reviews/tasks.py
     SENTIMENT_CACHE_URL: redis://redis:6379/1
   depends_on:
@@ -36,7 +38,7 @@ services:
       # Shared SQLite database (same volume as in celery-worker)
       - sqlite_data:/data
     ports:
-      - "8000:8000"
+      - "${WEB_PORT:-8000}:8000"
 
   celery-worker:
     <<: *app
@@ -52,6 +54,10 @@ services:
   rabbitmq:
     image: rabbitmq:3.13-management
     restart: unless-stopped
+    environment:
+      # Only applied when the rabbitmq_data volume is created for the first time
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
     ports:
       # Only the management UI is exposed; AMQP stays on the internal network
       - "15672:15672"
